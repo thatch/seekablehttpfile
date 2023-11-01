@@ -15,55 +15,94 @@ class FakeSocket:
         return self.io
 
 
+class Fixture:
+    def __init__(self) -> None:
+        self.x = b"foo"
+        self.should_raise_on_open_ended = False
+
+    def get_range(
+        self, url: str, t: Optional[str], method: Optional[str] = "GET"
+    ) -> HTTPResponse:
+        if t is None:
+            data = f"HTTP/1.0 200 OK\nContent-Length: {len(self.x)}\n\n".encode()
+        else:
+            t = t[6:]  # strip 'bytes='
+            if t[0] == "-":
+                if self.should_raise_on_open_ended:
+                    raise urllib.error.HTTPError(
+                        code=501,
+                        url="",
+                        msg="",
+                        hdrs=None,  # type: ignore
+                        fp=None,
+                    )
+                start = max(0, len(self.x) - int(t[1:]))
+                end = len(self.x)
+            else:
+                start, end = map(int, t.split("-"))
+                end += 1  # Python half-open
+            t = f"{start}-{end}/{len(self.x)}"
+
+            data = (
+                f"HTTP/1.0 206 Partial Content\nContent-Range: bytes {t}\n\n".encode()
+                + self.x[start:end]
+            )
+
+        resp = HTTPResponse(FakeSocket(BytesIO(data)))  # type: ignore
+        resp.begin()
+        return resp
+
+
 class SeekableHttpFileTest(unittest.TestCase):
     def test_smoke(self) -> None:
-        x = b"foo"
-        should_raise_on_open_ended = False
-
-        def get_range(
-            url: str, t: Optional[str], method: Optional[str] = "GET"
-        ) -> HTTPResponse:
-            if t is None:
-                data = f"HTTP/1.0 200 OK\nContent-Length: {len(x)}\n\n".encode()
-            else:
-                t = t[6:]  # strip 'bytes='
-                if t[0] == "-":
-                    if should_raise_on_open_ended:
-                        raise urllib.error.HTTPError(
-                            code=501,
-                            url="",
-                            msg="",
-                            hdrs=None,  # type: ignore
-                            fp=None,
-                        )
-                    start = max(0, len(x) - int(t[1:]))
-                    end = len(x)
-                else:
-                    start, end = map(int, t.split("-"))
-                    end += 1  # Python half-open
-                t = f"{start}-{end}/{len(x)}"
-
-                data = (
-                    f"HTTP/1.0 206 Partial Content\nContent-Range: bytes {t}\n\n".encode()
-                    + x[start:end]
-                )
-
-            resp = HTTPResponse(FakeSocket(BytesIO(data)))  # type: ignore
-            resp.begin()
-            return resp
-
-        f = SeekableHttpFile("", get_range=get_range)
+        r = Fixture()
+        f = SeekableHttpFile("", get_range=r.get_range)
         self.assertEqual(0, f.pos)
         self.assertEqual(3, f.length)
         self.assertEqual(b"f", f.read(1))
+        self.assertEqual(1, f.stats["num_requests"])
+        self.assertEqual(3, f.stats["optimistic_bytes_read"])
+        self.assertEqual(0, f.stats["lazy_bytes_read"])
         self.assertEqual(b"foo", f.end_cache)  # _optimistic_first_read
 
-        should_raise_on_open_ended = True
-        f = SeekableHttpFile("", get_range=get_range)
+    def test_partially_cached(self) -> None:
+        # edge case where it's only partially in end_cache
+        r = Fixture()
+        f = SeekableHttpFile("", get_range=r.get_range, precache=2)
         self.assertEqual(0, f.pos)
         self.assertEqual(3, f.length)
+        self.assertEqual(b"fo", f.read(2))
+        self.assertEqual(2, f.stats["num_requests"])
+        self.assertEqual(2, f.stats["optimistic_bytes_read"])
+        self.assertEqual(2, f.stats["lazy_bytes_read"])
+        self.assertEqual(b"oo", f.end_cache)  # _optimistic_first_read
+
+    def test_pessimist(self) -> None:
+        r = Fixture()
+        r.should_raise_on_open_ended = True
+        f = SeekableHttpFile("", get_range=r.get_range, precache=0)
+        self.assertEqual(0, f.pos)
+        self.assertEqual(3, f.length)
+        self.assertEqual(1, f.stats["num_requests"])
         self.assertEqual(b"f", f.read(1))
-        self.assertEqual(b"", f.end_cache)  # _head
+        self.assertEqual(2, f.stats["num_requests"])
+        self.assertEqual(0, f.stats["optimistic_bytes_read"])
+        self.assertEqual(1, f.stats["lazy_bytes_read"])
+        self.assertEqual(b"", f.end_cache)
+
+    def test_short_read(self) -> None:
+        r = Fixture()
+        r.should_raise_on_open_ended = True
+        f = SeekableHttpFile("", get_range=r.get_range, precache=2)
+        self.assertEqual(0, f.pos)
+        self.assertEqual(3, f.length)
+        r.x = b""
+        with self.assertRaises(ValueError):
+            f.read(3)
+        self.assertEqual(4, f.stats["num_requests"])
+        self.assertEqual(2, f.stats["optimistic_bytes_read"])
+        self.assertEqual(3, f.stats["lazy_bytes_read"])
+        self.assertEqual(b"oo", f.end_cache)  # _head
 
     def test_live(self) -> None:
         # This test requires internet access.

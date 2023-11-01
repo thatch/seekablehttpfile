@@ -1,10 +1,70 @@
 import unittest
 import urllib.error
+from http.client import HTTPResponse
+from io import BytesIO
+from typing import Any, Optional
 
 from seekablehttpfile import SeekableHttpFile
 
 
+class FakeSocket:
+    def __init__(self, io: BytesIO):
+        self.io = io
+
+    def makefile(self, _: Any) -> BytesIO:
+        return self.io
+
+
 class SeekableHttpFileTest(unittest.TestCase):
+    def test_smoke(self) -> None:
+        x = b"foo"
+        should_raise_on_open_ended = False
+
+        def get_range(
+            url: str, t: Optional[str], method: Optional[str] = "GET"
+        ) -> HTTPResponse:
+            if t is None:
+                data = f"HTTP/1.0 200 OK\nContent-Length: {len(x)}\n\n".encode()
+            else:
+                t = t[6:]  # strip 'bytes='
+                if t[0] == "-":
+                    if should_raise_on_open_ended:
+                        raise urllib.error.HTTPError(
+                            code=501,
+                            url="",
+                            msg="",
+                            hdrs=None,  # type: ignore
+                            fp=None,
+                        )
+                    start = max(0, len(x) - int(t[1:]))
+                    end = len(x)
+                else:
+                    start, end = map(int, t.split("-"))
+                    end += 1  # Python half-open
+                t = f"{start}-{end}/{len(x)}"
+
+                data = (
+                    f"HTTP/1.0 206 Partial Content\nContent-Range: bytes {t}\n\n".encode()
+                    + x[start:end]
+                )
+
+            resp = HTTPResponse(FakeSocket(BytesIO(data)))  # type: ignore
+            resp.begin()
+            return resp
+
+        f = SeekableHttpFile("", get_range=get_range)
+        self.assertEqual(0, f.pos)
+        self.assertEqual(3, f.length)
+        self.assertEqual(b"f", f.read(1))
+        self.assertEqual(b"foo", f.end_cache)  # _optimistic_first_read
+
+        should_raise_on_open_ended = True
+        f = SeekableHttpFile("", get_range=get_range)
+        self.assertEqual(0, f.pos)
+        self.assertEqual(3, f.length)
+        self.assertEqual(b"f", f.read(1))
+        self.assertEqual(b"", f.end_cache)  # _head
+
     def test_live(self) -> None:
         # This test requires internet access.
         f = SeekableHttpFile("http://timhatch.com/projects/http-tests/sequence_100.txt")

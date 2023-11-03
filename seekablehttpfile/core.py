@@ -5,18 +5,21 @@ from typing import Any, Callable, Optional, TypeVar, Union
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+# This is a little strange in order to get mypy to be happy with either.
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def ktrace(*trace_args: str, shortname: Union[str, bool] = False) -> Callable[[F], F]:
+    def inner(func: F) -> F:
+        return func
+
+    return inner
+
+
 try:
-    from keke import ktrace
+    from keke import ktrace  # type: ignore[no-redef]  # noqa: F811
 except ImportError:
-    F = TypeVar("F", bound=Callable[..., Any])
-
-    def ktrace(
-        *trace_args: str, shortname: Union[str, bool] = False
-    ) -> Callable[[F], F]:
-        def inner(func: F) -> F:
-            return func
-
-        return inner
+    pass
 
 
 LOG = logging.getLogger(__name__)

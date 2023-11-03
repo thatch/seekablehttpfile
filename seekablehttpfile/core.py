@@ -136,7 +136,7 @@ class SeekableHttpFile:
 
     @ktrace("self.pos", "n")
     def read(self, n: int = -1) -> bytes:
-        LOG.debug(f"read {n} @ {self.length-self.pos}")
+        LOG.debug(f"read {n} @ {self.length - self.pos}")
         if n == -1:
             n = self.length - self.pos
         if n == 0:

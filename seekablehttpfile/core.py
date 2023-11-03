@@ -1,15 +1,30 @@
 import logging
 import re
 from http.client import HTTPResponse
-from typing import Callable, Optional
+from typing import Any, Callable, Optional, TypeVar, Union
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+
+try:
+    from keke import ktrace
+except ImportError:
+    F = TypeVar("F", bound=Callable[..., Any])
+
+    def ktrace(
+        *trace_args: str, shortname: Union[str, bool] = False
+    ) -> Callable[[F], F]:
+        def inner(func: F) -> F:
+            return func
+
+        return inner
+
 
 LOG = logging.getLogger(__name__)
 
 CONTENT_RANGE_RE = re.compile(r"bytes (\d+)-(\d+)/(\d+)")
 
 
+@ktrace("content_range", "method")
 def get_range_urlopen(
     url: str, content_range: Optional[str], method: Optional[str] = None
 ) -> HTTPResponse:
@@ -54,6 +69,7 @@ class SeekableHttpFile:
         # Just read the length if not precaching or being optimistic didn't work
         self._head()
 
+    @ktrace()
     def _optimistic_first_read(self) -> None:
         """
         Read (up to) some length, using suffix-length.
@@ -84,6 +100,7 @@ class SeekableHttpFile:
             # TODO verify ETag/Last-Modified don't change.
             # TODO if there was a redirect, save new url
 
+    @ktrace()
     def _head(self) -> None:
         """
         Issue a HEAD request to find the length, then precache if desired.
@@ -117,6 +134,7 @@ class SeekableHttpFile:
         LOG.debug("tell")
         return self.pos
 
+    @ktrace("self.pos", "n")
     def read(self, n: int = -1) -> bytes:
         LOG.debug(f"read {n} @ {self.length-self.pos}")
         if n == -1:

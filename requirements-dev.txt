@@ -1,5 +1,5 @@
 black==23.10.1
-checkdeps==0.0.2
+checkdeps==0.9.0
 coverage==7.3.2
 flake8==6.1.0
 mypy==1.6.1

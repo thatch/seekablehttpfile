@@ -1,9 +1,11 @@
 import logging
 import re
-from http.client import HTTPResponse
+from dataclasses import dataclass
 from typing import Any, Callable, Optional, TypeVar, Union
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+
+import requests.sessions
 
 # This is a little strange in order to get mypy to be happy with either.
 F = TypeVar("F", bound=Callable[..., Any])
@@ -27,20 +29,63 @@ LOG = logging.getLogger(__name__)
 CONTENT_RANGE_RE = re.compile(r"bytes (\d+)-(\d+)/(\d+)")
 
 
+@dataclass
+class GeneralizedResponse:
+    url: str
+    content_length: Optional[str] = None
+    content_range: Optional[str] = None
+    etag: Optional[str] = None
+    content: Optional[bytes] = None
+
+
 @ktrace("content_range", "method")
 def get_range_urlopen(
     url: str, content_range: Optional[str], method: Optional[str] = None
-) -> HTTPResponse:
+) -> GeneralizedResponse:
     method = method or "GET"
     headers = {"Range": content_range} if content_range is not None else {}
-    return urlopen(Request(url, headers=headers, method=method))  # type: ignore
+    # This is expected to raise an exception with .code
+    resp = urlopen(Request(url, headers=headers, method=method))
+    return GeneralizedResponse(
+        resp.url,
+        resp.headers["content-length"],
+        resp.headers["content-range"],
+        resp.headers.get("etag"),
+        resp.read(),
+    )
+
+
+DEFAULT_SESSION = requests.sessions.Session()
+
+
+@ktrace("content_range", "method")
+def get_range_requests(
+    url: str,
+    content_range: Optional[str],
+    method: Optional[str] = None,
+    session: Optional[requests.sessions.Session] = None,
+) -> GeneralizedResponse:
+    method = method or "GET"
+    if not session:
+        session = DEFAULT_SESSION
+    headers = {"Range": content_range} if content_range is not None else {}
+
+    resp = session.request(method=method, url=url, headers=headers)
+    resp.raise_for_status()
+    return GeneralizedResponse(
+        resp.url,
+        resp.headers["content-length"],
+        resp.headers.get("content-range"),
+        resp.headers.get("etag"),
+        resp.content,
+    )
 
 
 class SeekableHttpFile:
     def __init__(
         self,
         url: str,
-        get_range: Callable[..., HTTPResponse] = get_range_urlopen,
+        get_range: Callable[..., GeneralizedResponse] = get_range_urlopen,
         precache: int = 256_000,
     ) -> None:
         self.url = url
@@ -68,6 +113,9 @@ class SeekableHttpFile:
             except HTTPError as e:
                 if e.code != 501:  # Unsupported range
                     raise
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code != 501:  # Unsupported range
+                    raise
 
         # Just read the length if not precaching or being optimistic didn't work
         self._head()
@@ -88,20 +136,24 @@ class SeekableHttpFile:
         # and saves another half-second for me.
         h = "bytes=-%d" % self.precache
         self.stats["num_requests"] += 1
-        with self.get_range(self.url, h) as resp:
-            match = CONTENT_RANGE_RE.match(resp.headers["Content-Range"])
-            assert match is not None, resp.headers["Content-Range"]
-            start, end, length = match.groups()
-            self.length = int(length)
-            LOG.debug(resp.headers["Content-Range"])
-            self.end_cache = resp.read()
-            self.stats["optimistic_bytes_read"] = len(self.end_cache)
-            self.end_cache_start = int(start)
-            # print(type(self.end_cache), self.end_cache_start, url)
-            assert self.end_cache_start >= 0
+        resp = self.get_range(self.url, h)
 
-            # TODO verify ETag/Last-Modified don't change.
-            # TODO if there was a redirect, save new url
+        assert resp.content_range is not None
+        match = CONTENT_RANGE_RE.match(resp.content_range)
+        assert match is not None, resp.content_range
+        start, end, length = match.groups()
+        self.length = int(length)
+        assert resp.content is not None
+        self.end_cache = resp.content
+        self.stats["optimistic_bytes_read"] = len(self.end_cache)
+        self.end_cache_start = int(start)
+        # print(type(self.end_cache), self.end_cache_start, url)
+        assert self.end_cache_start >= 0
+
+        # TODO verify ETag/Last-Modified don't change.
+        if resp.url != self.url:
+            LOG.debug("Redirected %s -> %s", self.url, resp.url)
+            self.url = resp.url
 
     @ktrace()
     def _head(self) -> None:
@@ -110,16 +162,23 @@ class SeekableHttpFile:
         """
         LOG.debug("_head")
         self.stats["num_requests"] += 1
-        with self.get_range(self.url, None, method="HEAD") as resp:
-            self.length = int(resp.headers["Content-Length"])
-            self.end_cache_start = max(0, self.length - self.precache)
-            if self.precache:
-                self.stats["num_requests"] += 1
-                resp = self.get_range(
-                    self.url, "bytes=%d-%d" % (self.end_cache_start, self.length - 1)
-                )
-                self.end_cache = resp.read()
-                self.stats["optimistic_bytes_read"] = len(self.end_cache)
+        resp = self.get_range(self.url, None, method="HEAD")
+
+        assert resp.content_length is not None
+        self.length = int(resp.content_length)
+        self.end_cache_start = max(0, self.length - self.precache)
+        if self.precache:
+            self.stats["num_requests"] += 1
+            resp = self.get_range(
+                self.url, "bytes=%d-%d" % (self.end_cache_start, self.length - 1)
+            )
+            assert resp.content is not None
+            self.end_cache = resp.content
+            self.stats["optimistic_bytes_read"] = len(self.end_cache)
+
+        if resp.url != self.url:
+            LOG.warning("Redirected %s -> %s", self.url, resp.url)
+            self.url = resp.url
 
     def seek(self, pos: int, whence: int = 0) -> None:
         LOG.debug(f"seek {pos} {whence}")
@@ -153,10 +212,9 @@ class SeekableHttpFile:
             return self.end_cache[p : p + n]
 
         self.stats["num_requests"] += 1
-        with self.get_range(
-            self.url, "bytes=%d-%d" % (self.pos, self.pos + n - 1)
-        ) as resp:
-            data: bytes = resp.read()
+        resp = self.get_range(self.url, "bytes=%d-%d" % (self.pos, self.pos + n - 1))
+        assert resp.content is not None
+        data = resp.content
 
         self.stats["lazy_bytes_read"] += n
         self.pos += n

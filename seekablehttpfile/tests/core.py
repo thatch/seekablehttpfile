@@ -1,30 +1,34 @@
 import unittest
 import urllib.error
-from http.client import HTTPResponse
-from io import BytesIO
-from typing import Any, Optional
+from typing import Optional
 
 from seekablehttpfile import SeekableHttpFile
+from seekablehttpfile.core import GeneralizedResponse, get_range_requests
 
-
-class FakeSocket:
-    def __init__(self, io: BytesIO):
-        self.io = io
-
-    def makefile(self, _: Any) -> BytesIO:
-        return self.io
+SAMPLE_FILE = "https://files.pythonhosted.org/packages/86/ea/f27b648330abff7d07faf03f2dbe8070630d2a14b79185f165d555447071/seekablehttpfile-0.0.4-py3-none-any.whl"
 
 
 class Fixture:
-    def __init__(self) -> None:
+    def __init__(
+        self, redir_url: Optional[str] = None, etag: Optional[str] = None
+    ) -> None:
         self.x = b"foo"
         self.should_raise_on_open_ended = False
+        self.redir_url = redir_url
+        self.etag = etag
 
     def get_range(
         self, url: str, t: Optional[str], method: Optional[str] = "GET"
-    ) -> HTTPResponse:
+    ) -> GeneralizedResponse:
         if t is None:
-            data = f"HTTP/1.0 200 OK\nContent-Length: {len(self.x)}\n\n".encode()
+            assert method == "HEAD"
+            return GeneralizedResponse(
+                self.redir_url or url,
+                str(len(self.x)),
+                None,
+                self.etag,
+                b"",
+            )
         else:
             t = t[6:]  # strip 'bytes='
             if t[0] == "-":
@@ -41,16 +45,15 @@ class Fixture:
             else:
                 start, end = map(int, t.split("-"))
                 end += 1  # Python half-open
-            t = f"{start}-{end}/{len(self.x)}"
+            t = f"bytes {start}-{end}/{len(self.x)}"
 
-            data = (
-                f"HTTP/1.0 206 Partial Content\nContent-Range: bytes {t}\n\n".encode()
-                + self.x[start:end]
+            return GeneralizedResponse(
+                self.redir_url or url,
+                str(end - start + 1),
+                t,
+                self.etag,
+                self.x[start:end],
             )
-
-        resp = HTTPResponse(FakeSocket(BytesIO(data)))  # type: ignore
-        resp.begin()
-        return resp
 
 
 class SeekableHttpFileTest(unittest.TestCase):
@@ -104,7 +107,7 @@ class SeekableHttpFileTest(unittest.TestCase):
         self.assertEqual(3, f.stats["lazy_bytes_read"])
         self.assertEqual(b"oo", f.end_cache)  # _head
 
-    def test_live(self) -> None:
+    def test_live_synthetic(self) -> None:
         # This test requires internet access.
         f = SeekableHttpFile("http://timhatch.com/projects/http-tests/sequence_100.txt")
         self.assertEqual(0, f.pos)
@@ -131,9 +134,29 @@ class SeekableHttpFileTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             f.seek(0, 99)
 
+    # Tests past this point require Internet access.
+
     def test_live_404(self) -> None:
-        # This test requires internet access.
         with self.assertRaises(urllib.error.HTTPError):
             SeekableHttpFile(
                 "http://timhatch.com/projects/http-tests/response/?code=404"
             )
+
+    def test_live_pypi(self):
+        f = SeekableHttpFile(SAMPLE_FILE)
+        print(f.stats)
+
+    def test_live_pypi_redirect(self):
+        f = SeekableHttpFile("http://httpbin.org/redirect-to?url=" + SAMPLE_FILE)
+        print(f.stats)
+
+    def test_live_requests_pypi(self):
+        f = SeekableHttpFile(SAMPLE_FILE, get_range=get_range_requests)
+        print(f.stats)
+
+    def test_live_requests_pypi_redirect(self):
+        f = SeekableHttpFile(
+            "http://httpbin.org/redirect-to?url=" + SAMPLE_FILE,
+            get_range=get_range_requests,
+        )
+        print(f.stats)

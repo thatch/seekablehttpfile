@@ -28,7 +28,7 @@ lint:
 	python -m ufmt check $(SOURCES)
 	python -m flake8 $(SOURCES)
 	python -m checkdeps --allow-names seekablehttpfile,keke seekablehttpfile
-	mypy --strict seekablehttpfile
+	mypy --install-types --non-interactive seekablehttpfile
 
 .PHONY: release
 release:

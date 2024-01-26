@@ -20,7 +20,7 @@ def ktrace(*trace_args: str, shortname: Union[str, bool] = False) -> Callable[[F
 
 
 try:
-    from keke import ktrace  # type: ignore[no-redef]  # noqa: F811
+    from keke import ktrace  # type: ignore[no-redef,unused-ignore]  # noqa: F811
 except ImportError:
     pass
 

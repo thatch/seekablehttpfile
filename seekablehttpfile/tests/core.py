@@ -143,7 +143,7 @@ class SeekableHttpFileTest(unittest.TestCase):
                 "http://timhatch.com/projects/http-tests/response/?code=404"
             )
 
-    def test_live_pypi(self):
+    def test_live_pypi(self) -> None:
         f = SeekableHttpFile(SAMPLE_FILE)
         f.seek(0, os.SEEK_SET)
         f.read(12)
@@ -155,14 +155,14 @@ class SeekableHttpFileTest(unittest.TestCase):
         self.assertEqual(4, f.stats["satisfied_from_cache"])
         self.assertEqual(0, f.stats["lazy_bytes_read"])
 
-    def test_live_pypi_redirect(self):
+    def test_live_pypi_redirect(self) -> None:
         f = SeekableHttpFile("http://httpbin.org/redirect-to?url=" + SAMPLE_FILE)
         self.assertEqual(SAMPLE_FILE, f.url)
 
-    def test_live_requests_pypi(self):
-        f = SeekableHttpFile(SAMPLE_FILE, get_range=get_range_requests)
+    def test_live_requests_pypi(self) -> None:
+        _ = SeekableHttpFile(SAMPLE_FILE, get_range=get_range_requests)
 
-    def test_live_requests_pypi_redirect(self):
+    def test_live_requests_pypi_redirect(self) -> None:
         f = SeekableHttpFile(
             "http://httpbin.org/redirect-to?url=" + SAMPLE_FILE,
             get_range=get_range_requests,

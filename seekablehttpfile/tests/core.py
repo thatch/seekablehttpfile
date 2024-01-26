@@ -1,3 +1,4 @@
+import os
 import unittest
 import urllib.error
 from typing import Optional
@@ -144,19 +145,26 @@ class SeekableHttpFileTest(unittest.TestCase):
 
     def test_live_pypi(self):
         f = SeekableHttpFile(SAMPLE_FILE)
-        print(f.stats)
+        f.seek(0, os.SEEK_SET)
+        f.read(12)
+        f.seek(-10, os.SEEK_END)
+        f.read(10)
+        self.assertEqual(b"", f.read(2))
+        f.seek(-10, os.SEEK_END)
+        f.read(12)
+        self.assertEqual(4, f.stats["satisfied_from_cache"])
+        self.assertEqual(0, f.stats["lazy_bytes_read"])
 
     def test_live_pypi_redirect(self):
         f = SeekableHttpFile("http://httpbin.org/redirect-to?url=" + SAMPLE_FILE)
-        print(f.stats)
+        self.assertEqual(SAMPLE_FILE, f.url)
 
     def test_live_requests_pypi(self):
         f = SeekableHttpFile(SAMPLE_FILE, get_range=get_range_requests)
-        print(f.stats)
 
     def test_live_requests_pypi_redirect(self):
         f = SeekableHttpFile(
             "http://httpbin.org/redirect-to?url=" + SAMPLE_FILE,
             get_range=get_range_requests,
         )
-        print(f.stats)
+        self.assertEqual(SAMPLE_FILE, f.url)

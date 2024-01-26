@@ -1,3 +1,4 @@
+import os
 import logging
 import re
 from dataclasses import dataclass
@@ -177,17 +178,17 @@ class SeekableHttpFile:
             self.stats["optimistic_bytes_read"] = len(self.end_cache)
 
         if resp.url != self.url:
-            LOG.warning("Redirected %s -> %s", self.url, resp.url)
+            LOG.debug("Redirected %s -> %s", self.url, resp.url)
             self.url = resp.url
 
     def seek(self, pos: int, whence: int = 0) -> None:
         LOG.debug(f"seek {pos} {whence}")
         # TODO clamp/error
-        if whence == 0:
+        if whence == os.SEEK_SET:
             self.pos = pos
-        elif whence == 1:
+        elif whence == os.SEEK_CUR:
             self.pos += pos
-        elif whence == 2:
+        elif whence == os.SEEK_END:
             self.pos = self.length + pos
         else:
             raise ValueError(f"Invalid value for whence: {whence!r}")

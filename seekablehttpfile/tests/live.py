@@ -1,11 +1,19 @@
+import io
+import json
 import os
 import unittest
 import urllib.error
+from typing import Any, List
 
 import requests.exceptions
 
 from seekablehttpfile import SeekableHttpFile
 from seekablehttpfile.core import get_range_requests
+
+try:
+    import keke
+except ImportError:
+    keke = None  # type:ignore[assignment,unused-ignore]
 
 SAMPLE_FILE = "https://files.pythonhosted.org/packages/86/ea/f27b648330abff7d07faf03f2dbe8070630d2a14b79185f165d555447071/seekablehttpfile-0.0.4-py3-none-any.whl"
 
@@ -63,6 +71,36 @@ class LiveTests(unittest.TestCase):
         f.read(12)
         self.assertEqual(4, f.stats["satisfied_from_cache"])
         self.assertEqual(0, f.stats["lazy_bytes_read"])
+
+    @unittest.skipIf(keke is None, "Keke is not installed")
+    def test_live_pypi_keke(self) -> None:
+        trace_output = io.StringIO()
+        with keke.TraceOutput(file=trace_output, close_output_file=False):
+            f = SeekableHttpFile(SAMPLE_FILE)
+            f.seek(0, os.SEEK_SET)
+            f.read(12)
+
+        # This will break if keke ever starts outputting protos.
+        events: List[Any] = []
+        for line in trace_output.getvalue().splitlines():
+            if line[:1] == "{":
+                events.append(json.loads(line[:-1]))  # skip trailing comma
+
+        matching_events = [
+            ev for ev in events if ev.get("name", "") == "get_range_urlopen"
+        ]
+        self.assertEqual(3, len(matching_events))
+        self.assertEqual(
+            {"content_range": "bytes=-256000", "method": "None"},
+            matching_events[0]["args"],
+        )
+        self.assertEqual(
+            {"content_range": "None", "method": "HEAD"}, matching_events[1]["args"]
+        )
+        self.assertEqual(
+            {"content_range": "bytes=0-6993", "method": "None"},
+            matching_events[2]["args"],
+        )
 
     def test_live_pypi_redirect(self) -> None:
         f = SeekableHttpFile("http://httpbin.org/redirect-to?url=" + SAMPLE_FILE)

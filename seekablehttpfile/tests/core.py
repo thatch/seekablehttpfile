@@ -1,12 +1,19 @@
+import io
+import json
 import unittest
 import urllib.error
-from typing import Optional
+from typing import Any, List, Optional
 from unittest.mock import Mock
 
 import requests.exceptions
 
 from seekablehttpfile import SeekableHttpFile
 from seekablehttpfile.core import EtagChangedError, GeneralizedResponse
+
+try:
+    import keke
+except ImportError:
+    keke = None  # type:ignore[assignment,unused-ignore]
 
 
 class Fixture:
@@ -79,6 +86,40 @@ class SeekableHttpFileTest(unittest.TestCase):
         self.assertEqual(3, f.stats["optimistic_bytes_read"])
         self.assertEqual(0, f.stats["lazy_bytes_read"])
         self.assertEqual(b"foo", f.end_cache)  # _optimistic_first_read
+
+    @unittest.skipIf(keke is None, "Keke is not installed")
+    def test_smoke_keke(self) -> None:
+        trace_output = io.StringIO()
+        with keke.TraceOutput(file=trace_output, close_output_file=False):
+            r = Fixture()
+            f = SeekableHttpFile("", get_range=r.get_range, precache=2)
+            self.assertEqual(0, f.pos)
+            self.assertEqual(3, f.length)
+            self.assertEqual(b"f", f.read(1))
+            self.assertEqual(2, f.stats["num_requests"])
+            self.assertEqual(2, f.stats["optimistic_bytes_read"])
+            self.assertEqual(1, f.stats["lazy_bytes_read"])
+            self.assertEqual(b"oo", f.end_cache)  # _optimistic_first_read
+
+        # This will break if keke ever starts outputting protos.
+        events: List[Any] = []
+        for line in trace_output.getvalue().splitlines():
+            if line[:1] == "{":
+                events.append(json.loads(line[:-1]))  # skip trailing comma
+
+        matching_events = [
+            ev for ev in events if ev.get("name", "").startswith("SeekableHttpFile")
+        ]
+
+        self.assertEqual(2, len(matching_events))
+
+        self.assertEqual(
+            "SeekableHttpFile._optimistic_first_read", matching_events[0]["name"]
+        )
+        self.assertEqual({}, matching_events[0]["args"])
+
+        self.assertEqual("SeekableHttpFile.read", matching_events[1]["name"])
+        self.assertEqual({"self.pos": "0", "n": "1"}, matching_events[1]["args"])
 
     def test_partially_cached(self) -> None:
         # edge case where it's only partially in end_cache

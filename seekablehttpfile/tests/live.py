@@ -2,6 +2,8 @@ import os
 import unittest
 import urllib.error
 
+import requests.exceptions
+
 from seekablehttpfile import SeekableHttpFile
 from seekablehttpfile.core import get_range_requests
 
@@ -41,6 +43,13 @@ class LiveTests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError):
             SeekableHttpFile(
                 "http://timhatch.com/projects/http-tests/response/?code=404"
+            )
+
+    def test_live_404_requests(self) -> None:
+        with self.assertRaises(requests.exceptions.HTTPError):
+            SeekableHttpFile(
+                "http://timhatch.com/projects/http-tests/response/?code=404",
+                get_range=get_range_requests,
             )
 
     def test_live_pypi(self) -> None:

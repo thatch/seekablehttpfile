@@ -30,6 +30,10 @@ LOG = logging.getLogger(__name__)
 CONTENT_RANGE_RE = re.compile(r"bytes (\d+)-(\d+)/(\d+)")
 
 
+class EtagChangedError(Exception):
+    pass
+
+
 @dataclass
 class GeneralizedResponse:
     url: str
@@ -88,6 +92,7 @@ class SeekableHttpFile:
         url: str,
         get_range: Callable[..., GeneralizedResponse] = get_range_urlopen,
         precache: int = 256_000,
+        check_etag: bool = True,
     ) -> None:
         self.url = url
         self.get_range = get_range
@@ -100,6 +105,8 @@ class SeekableHttpFile:
         self.pos = 0
         self.length = -1
         self.precache = precache
+        self.check_etag = check_etag
+        self.etag: Optional[str] = None
 
         self.end_cache: bytes = b""
         self.end_cache_start: Optional[int] = None
@@ -151,10 +158,12 @@ class SeekableHttpFile:
         # print(type(self.end_cache), self.end_cache_start, url)
         assert self.end_cache_start >= 0
 
-        # TODO verify ETag/Last-Modified don't change.
         if resp.url != self.url:
             LOG.debug("Redirected %s -> %s", self.url, resp.url)
             self.url = resp.url
+        if resp.etag:
+            assert self.etag is None
+            self.etag = resp.etag
 
     @ktrace()
     def _head(self) -> None:
@@ -180,6 +189,9 @@ class SeekableHttpFile:
         if resp.url != self.url:
             LOG.debug("Redirected %s -> %s", self.url, resp.url)
             self.url = resp.url
+        if resp.etag:
+            assert self.etag is None
+            self.etag = resp.etag
 
     def seek(self, pos: int, whence: int = 0) -> None:
         LOG.debug(f"seek {pos} {whence}")
@@ -221,6 +233,19 @@ class SeekableHttpFile:
         self.pos += n
         if len(data) != n:
             raise ValueError("Truncated read", len(data), n)
+
+        if resp.url != self.url:
+            LOG.debug("Redirected on subsequent read %s -> %s", self.url, resp.url)
+            self.url = resp.url
+        if resp.etag:
+            # It's a little weird to find out an etag on subsequent request, but
+            # possible I suppose.
+            if self.etag is None:
+                self.etag = resp.etag
+            elif self.check_etag and self.etag != resp.etag:
+                raise EtagChangedError(
+                    f"Previous etag was {self.etag!r}, new one is {resp.etag!r}"
+                )
 
         return data
 

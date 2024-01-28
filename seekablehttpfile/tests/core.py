@@ -48,6 +48,10 @@ class Fixture:
                         request=Mock(),
                         response=Mock(status_code=501),
                     )
+                elif self.should_raise_on_open_ended:
+                    raise Exception(
+                        "should_raise_on_open_ended can only be (None, 'urllib', 'requests')"
+                    )
                 start = max(0, len(self.x) - int(t[1:]))
                 end = len(self.x)
             else:
@@ -90,7 +94,7 @@ class SeekableHttpFileTest(unittest.TestCase):
 
     def test_pessimist(self) -> None:
         r = Fixture()
-        r.should_raise_on_open_ended = True
+        r.should_raise_on_open_ended = "urllib"
         f = SeekableHttpFile("", get_range=r.get_range, precache=0)
         self.assertEqual(0, f.pos)
         self.assertEqual(3, f.length)

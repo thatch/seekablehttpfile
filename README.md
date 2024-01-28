@@ -15,7 +15,21 @@ range requests as needed.
 >>> # find out how much we actually read
 >>> f.stats
 {'num_requests': 4, 'optimistic_bytes_read': 256000, 'lazy_bytes_read': 1078669, 'satisfied_from_cache': 2}
+
 ```
+
+# Version Compatibility
+
+Users of this library should be able to use Python 3.7 or above.  This is
+validated by tests, and is the version encoded in `Requires-Python`.
+
+Development requires Python 3.12 (or 3.13), realistically.  CI validates that it
+works on 3.10 and above, but you will get less checking in flake8.  Expect older
+versions to be dropped as soon as there is a version of mypy, black, etc that is
+not simultaneously compatible with all development versions.
+
+Notably, this means that while this project might function (and pass tests) on
+Python 3.7, it's likely that you can't typecheck against it.
 
 # License
 

@@ -154,8 +154,9 @@ class SeekableHttpFileTest(unittest.TestCase):
         self.assertEqual(0, f.pos)
         self.assertEqual(3, f.length)
         r.x = b""
-        with self.assertRaises(ValueError):
-            f.read(3)
+        # Short read: server returns fewer bytes than requested; should not raise
+        result = f.read(3)
+        self.assertEqual(b"", result)
         self.assertEqual(4, f.stats["num_requests"])
         self.assertEqual(2, f.stats["optimistic_bytes_read"])
         self.assertEqual(3, f.stats["lazy_bytes_read"])
@@ -168,12 +169,26 @@ class SeekableHttpFileTest(unittest.TestCase):
         self.assertEqual(0, f.pos)
         self.assertEqual(3, f.length)
         r.x = b""
-        with self.assertRaises(ValueError):
-            f.read(3)
+        # Short read: server returns fewer bytes than requested; should not raise
+        result = f.read(3)
+        self.assertEqual(b"", result)
         self.assertEqual(4, f.stats["num_requests"])
         self.assertEqual(2, f.stats["optimistic_bytes_read"])
         self.assertEqual(3, f.stats["lazy_bytes_read"])
         self.assertEqual(b"oo", f.end_cache)  # _head
+
+    def test_read_near_eof_returns_short_read(self) -> None:
+        # Seek near end of file, request more bytes than remain.
+        # Should return only the available bytes, not raise.
+        r = Fixture()
+        r.should_raise_on_open_ended = "urllib"
+        f = SeekableHttpFile("", get_range=r.get_range, precache=0)
+        # r.x == b"foo", length == 3; seek to position 2 (1 byte remains)
+        f.seek(2)
+        result = f.read(100)
+        self.assertIsInstance(result, bytes)
+        self.assertEqual(b"o", result)
+        self.assertEqual(3, f.pos)  # advanced only by actual bytes returned
 
     def test_url_redirect_on_first_req(self) -> None:
         r = Fixture(redir_url="z")

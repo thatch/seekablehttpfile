@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import unittest
 import urllib.error
 from typing import Any, List, Optional
@@ -220,3 +221,17 @@ class SeekableHttpFileTest(unittest.TestCase):
         f.read(1)
         # Not an error
         self.assertEqual("x", f.etag)
+
+    def test_seek_negative_clamps_to_zero(self) -> None:
+        r = Fixture()
+        f = SeekableHttpFile("", get_range=r.get_range)
+        # SEEK_END with a large negative offset past the start of the file
+        f.seek(-100, os.SEEK_END)
+        self.assertEqual(0, f.pos)
+        # SEEK_CUR with a negative offset past the start of the file
+        f.seek(1, os.SEEK_SET)
+        f.seek(-50, os.SEEK_CUR)
+        self.assertEqual(0, f.pos)
+        # SEEK_SET with a negative value
+        f.seek(-5, os.SEEK_SET)
+        self.assertEqual(0, f.pos)

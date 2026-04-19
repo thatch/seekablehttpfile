@@ -197,7 +197,6 @@ class SeekableHttpFile:
 
     def seek(self, pos: int, whence: int = 0) -> int:
         LOG.debug(f"seek {pos} {whence}")
-        # TODO clamp/error
         if whence == os.SEEK_SET:
             self.pos = pos
         elif whence == os.SEEK_CUR:
@@ -206,6 +205,8 @@ class SeekableHttpFile:
             self.pos = self.length + pos
         else:
             raise ValueError(f"Invalid value for whence: {whence!r}")
+        if self.pos < 0:
+            self.pos = 0
         return self.pos
 
     def tell(self) -> int:

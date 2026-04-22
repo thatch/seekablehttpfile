@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import os
 import re
@@ -96,14 +98,14 @@ class SeekableHttpFile:
     ) -> None:
         self.url = url
         self.get_range = get_range
-        self.stats = {
+        self.stats: dict[str, int] = {
             "num_requests": 0,
             "optimistic_bytes_read": 0,
             "lazy_bytes_read": 0,
             "satisfied_from_cache": 0,
         }
-        self.pos = 0
-        self.length = -1
+        self.pos: int = 0
+        self.length: int = -1
         self.precache = precache
         self.check_etag = check_etag
         self.etag: Optional[str] = None
@@ -149,7 +151,7 @@ class SeekableHttpFile:
         assert resp.content_range is not None
         match = CONTENT_RANGE_RE.match(resp.content_range)
         assert match is not None, resp.content_range
-        start, end, length = match.groups()
+        start, _, length = match.groups()
         self.length = int(length)
         assert resp.content is not None
         self.end_cache = resp.content

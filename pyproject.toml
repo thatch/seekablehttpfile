@@ -1,4 +1,5 @@
 [tool.pyright]
-typeCheckingMode = "standard"
+include = ["seekablehttpfile"]
+typeCheckingMode = "strict"
 useLibraryCodeForTypes = true
-reportMissingTypeStubs = false
+reportMissingTypeStubs = "warning"

@@ -193,7 +193,7 @@ class SeekableHttpFile:
             assert self.etag is None
             self.etag = resp.etag
 
-    def seek(self, pos: int, whence: int = 0) -> None:
+    def seek(self, pos: int, whence: int = 0) -> int:
         LOG.debug(f"seek {pos} {whence}")
         # TODO clamp/error
         if whence == os.SEEK_SET:
@@ -204,6 +204,7 @@ class SeekableHttpFile:
             self.pos = self.length + pos
         else:
             raise ValueError(f"Invalid value for whence: {whence!r}")
+        return self.pos
 
     def tell(self) -> int:
         LOG.debug("tell")

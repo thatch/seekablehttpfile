@@ -22,7 +22,9 @@ class LiveTests(unittest.TestCase):
     """These tests all require internet access."""
 
     def test_live_synthetic(self) -> None:
-        f = SeekableHttpFile("http://timhatch.com/projects/http-tests/sequence_100.txt")
+        f = SeekableHttpFile(
+            "https://timhatch.com/projects/http-tests/sequence_100.txt"
+        )
         self.assertEqual(0, f.pos)
         self.assertEqual(292, f.length)
         self.assertEqual(b"1\n", f.read(2))
@@ -50,13 +52,13 @@ class LiveTests(unittest.TestCase):
     def test_live_404(self) -> None:
         with self.assertRaises(urllib.error.HTTPError):
             SeekableHttpFile(
-                "http://timhatch.com/projects/http-tests/response/?code=404"
+                "https://timhatch.com/projects/http-tests/response/?code=404"
             )
 
     def test_live_404_requests(self) -> None:
         with self.assertRaises(requests.exceptions.HTTPError):
             SeekableHttpFile(
-                "http://timhatch.com/projects/http-tests/response/?code=404",
+                "https://timhatch.com/projects/http-tests/response/?code=404",
                 get_range=get_range_requests,
             )
 
@@ -103,7 +105,7 @@ class LiveTests(unittest.TestCase):
         )
 
     def test_live_pypi_redirect(self) -> None:
-        f = SeekableHttpFile("http://httpbin.org/redirect-to?url=" + SAMPLE_FILE)
+        f = SeekableHttpFile("https://httpbin.org/redirect-to?url=" + SAMPLE_FILE)
         self.assertEqual(SAMPLE_FILE, f.url)
 
     def test_live_requests_pypi(self) -> None:
@@ -111,7 +113,7 @@ class LiveTests(unittest.TestCase):
 
     def test_live_requests_pypi_redirect(self) -> None:
         f = SeekableHttpFile(
-            "http://httpbin.org/redirect-to?url=" + SAMPLE_FILE,
+            "https://httpbin.org/redirect-to?url=" + SAMPLE_FILE,
             get_range=get_range_requests,
         )
         self.assertEqual(SAMPLE_FILE, f.url)

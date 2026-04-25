@@ -76,6 +76,7 @@ class LiveTests(unittest.TestCase):
 
     @unittest.skipIf(keke is None, "Keke is not installed")
     def test_live_pypi_keke(self) -> None:
+        assert keke is not None  # @skipIf above
         trace_output = io.StringIO()
         with keke.TraceOutput(file=trace_output, close_output_file=False):
             f = SeekableHttpFile(SAMPLE_FILE)

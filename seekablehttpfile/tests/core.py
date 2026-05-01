@@ -185,7 +185,7 @@ class SeekableHttpFileTest(unittest.TestCase):
 
     def test_etag_changes(self) -> None:
         r = Fixture(etag="x")
-        f = SeekableHttpFile("", get_range=r.get_range, precache=0)
+        f = SeekableHttpFile("", get_range=r.get_range, precache=0, check_etag=True)
         f.read(1)
         r.etag = "y"
         with self.assertRaisesRegex(

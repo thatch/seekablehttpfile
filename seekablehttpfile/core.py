@@ -94,7 +94,7 @@ class SeekableHttpFile:
         url: str,
         get_range: Callable[..., GeneralizedResponse] = get_range_urlopen,
         precache: int = 256_000,
-        check_etag: bool = True,
+        check_etag: bool = False,
     ) -> None:
         self.url = url
         self.get_range = get_range

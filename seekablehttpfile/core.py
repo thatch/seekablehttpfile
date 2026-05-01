@@ -233,10 +233,7 @@ class SeekableHttpFile:
         data = resp.content
 
         self.stats["lazy_bytes_read"] += n
-        self.pos += n
-        if len(data) != n:
-            raise ValueError("Truncated read", len(data), n)
-
+        self.pos += len(data)
         if resp.url != self.url:
             LOG.debug("Redirected on subsequent read %s -> %s", self.url, resp.url)
             self.url = resp.url

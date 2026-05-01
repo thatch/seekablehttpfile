@@ -123,6 +123,7 @@ class SeekableHttpFile:
             except HTTPError as e:
                 if e.code != 501:  # Unsupported range
                     raise
+                e.close()
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code != 501:  # Unsupported range
                     raise

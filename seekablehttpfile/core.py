@@ -148,23 +148,36 @@ class SeekableHttpFile:
         self.stats["num_requests"] += 1
         resp = self.get_range(self.url, h)
 
-        assert resp.content_range is not None
+        if resp.content_range is None:
+            raise ValueError(
+                "Server returned no Content-Range header for a ranged request"
+            )
         match = CONTENT_RANGE_RE.match(resp.content_range)
-        assert match is not None, resp.content_range
+        if match is None:
+            raise ValueError(
+                f"Could not parse Content-Range header: {resp.content_range!r}"
+            )
         start, _, length = match.groups()
         self.length = int(length)
-        assert resp.content is not None
+        if resp.content is None:
+            raise RuntimeError("GET response has no content")
         self.end_cache = resp.content
         self.stats["optimistic_bytes_read"] = len(self.end_cache)
         self.end_cache_start = int(start)
         # print(type(self.end_cache), self.end_cache_start, url)
-        assert self.end_cache_start >= 0
+        if self.end_cache_start < 0:
+            raise ValueError(
+                f"Content-Range start is negative: {self.end_cache_start!r}"
+            )
 
         if resp.url != self.url:
             LOG.debug("Redirected %s -> %s", self.url, resp.url)
             self.url = resp.url
         if resp.etag:
-            assert self.etag is None
+            if self.etag is not None:
+                raise RuntimeError(
+                    f"etag already set to {self.etag!r} before _optimistic_first_read completed"
+                )
             self.etag = resp.etag
 
     @ktrace()
@@ -176,7 +189,8 @@ class SeekableHttpFile:
         self.stats["num_requests"] += 1
         resp = self.get_range(self.url, None, method="HEAD")
 
-        assert resp.content_length is not None
+        if resp.content_length is None:
+            raise ValueError("Server returned no Content-Length header for a HEAD request")
         self.length = int(resp.content_length)
         self.end_cache_start = max(0, self.length - self.precache)
         if self.precache:
@@ -184,7 +198,8 @@ class SeekableHttpFile:
             resp = self.get_range(
                 self.url, "bytes=%d-%d" % (self.end_cache_start, self.length - 1)
             )
-            assert resp.content is not None
+            if resp.content is None:
+                raise RuntimeError("GET response has no content")
             self.end_cache = resp.content
             self.stats["optimistic_bytes_read"] = len(self.end_cache)
 
@@ -192,7 +207,10 @@ class SeekableHttpFile:
             LOG.debug("Redirected %s -> %s", self.url, resp.url)
             self.url = resp.url
         if resp.etag:
-            assert self.etag is None
+            if self.etag is not None:
+                raise RuntimeError(
+                    f"etag already set to {self.etag!r} before _head completed"
+                )
             self.etag = resp.etag
 
     def seek(self, pos: int, whence: int = 0) -> int:
@@ -220,7 +238,8 @@ class SeekableHttpFile:
         if n == 0:
             return b""
 
-        assert self.end_cache_start is not None
+        if self.end_cache_start is None:
+            raise RuntimeError("end_cache_start is not set; __init__ did not complete")
         p = self.pos - self.end_cache_start
         if p >= 0:
             self.stats["satisfied_from_cache"] += 1
@@ -229,7 +248,8 @@ class SeekableHttpFile:
 
         self.stats["num_requests"] += 1
         resp = self.get_range(self.url, "bytes=%d-%d" % (self.pos, self.pos + n - 1))
-        assert resp.content is not None
+        if resp.content is None:
+            raise RuntimeError("GET response has no content")
         data = resp.content
 
         self.stats["lazy_bytes_read"] += n

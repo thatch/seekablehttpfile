@@ -22,6 +22,7 @@ class Fixture:
     ) -> None:
         self.x = b"foo"
         self.should_raise_on_open_ended: Optional[str] = None
+        self.open_ended_error_code: int = 501
         self.redir_url = redir_url
         self.etag = etag
         self.last_fetched_url: Optional[str] = None
@@ -44,7 +45,7 @@ class Fixture:
             if t[0] == "-":
                 if self.should_raise_on_open_ended == "urllib":
                     raise urllib.error.HTTPError(
-                        code=501,
+                        code=self.open_ended_error_code,
                         url="",
                         msg="",
                         hdrs=None,  # type: ignore
@@ -53,7 +54,7 @@ class Fixture:
                 elif self.should_raise_on_open_ended == "requests":
                     raise requests.exceptions.HTTPError(
                         request=Mock(),
-                        response=Mock(status_code=501),
+                        response=Mock(status_code=self.open_ended_error_code),
                     )
                 elif self.should_raise_on_open_ended:
                     raise Exception(
@@ -137,6 +138,36 @@ class SeekableHttpFileTest(unittest.TestCase):
     def test_pessimist(self) -> None:
         r = Fixture()
         r.should_raise_on_open_ended = "urllib"
+        f = SeekableHttpFile("", get_range=r.get_range, precache=0)
+        self.assertEqual(0, f.pos)
+        self.assertEqual(3, f.length)
+        self.assertEqual(1, f.stats["num_requests"])
+        self.assertEqual(b"f", f.read(1))
+        self.assertEqual(2, f.stats["num_requests"])
+        self.assertEqual(0, f.stats["optimistic_bytes_read"])
+        self.assertEqual(1, f.stats["lazy_bytes_read"])
+        self.assertEqual(b"", f.end_cache)
+
+    def test_pessimist_416(self) -> None:
+        # Some servers (e.g. fastly, in front of files.pythonhosted.org) reject
+        # an unsupported suffix range with 416 instead of 501.
+        r = Fixture()
+        r.should_raise_on_open_ended = "urllib"
+        r.open_ended_error_code = 416
+        f = SeekableHttpFile("", get_range=r.get_range, precache=0)
+        self.assertEqual(0, f.pos)
+        self.assertEqual(3, f.length)
+        self.assertEqual(1, f.stats["num_requests"])
+        self.assertEqual(b"f", f.read(1))
+        self.assertEqual(2, f.stats["num_requests"])
+        self.assertEqual(0, f.stats["optimistic_bytes_read"])
+        self.assertEqual(1, f.stats["lazy_bytes_read"])
+        self.assertEqual(b"", f.end_cache)
+
+    def test_pessimist_416_requests(self) -> None:
+        r = Fixture()
+        r.should_raise_on_open_ended = "requests"
+        r.open_ended_error_code = 416
         f = SeekableHttpFile("", get_range=r.get_range, precache=0)
         self.assertEqual(0, f.pos)
         self.assertEqual(3, f.length)

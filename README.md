@@ -14,7 +14,7 @@ range requests as needed.
 9414
 >>> # find out how much we actually read
 >>> f.stats
-{'num_requests': 4, 'optimistic_bytes_read': 256000, 'lazy_bytes_read': 1078669, 'satisfied_from_cache': 2}
+{'num_requests': 2, 'optimistic_bytes_read': 256000, 'lazy_bytes_read': 1078669, 'satisfied_from_cache': 2}
 
 ```
 

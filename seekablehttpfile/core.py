@@ -129,7 +129,7 @@ class SeekableHttpFile:
                 if e.code not in (501, 416):
                     raise
             except requests.exceptions.HTTPError as e:
-                if e.response.status_code not in (501, 416):
+                if e.response is None or e.response.status_code not in (501, 416):
                     raise
 
         # Just read the length if not precaching or being optimistic didn't work

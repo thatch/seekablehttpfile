@@ -121,10 +121,15 @@ class SeekableHttpFile:
                 self._optimistic_first_read()
                 return
             except HTTPError as e:
-                if e.code != 501:  # Unsupported range
+                # 501 (Not Implemented) means the server doesn't support Range
+                # requests at all; 416 (Range Not Satisfiable) is what some
+                # servers (e.g. fastly, in front of files.pythonhosted.org) send
+                # instead for the same suffix-range request.  Either way, fall
+                # back to a HEAD request.
+                if e.code not in (501, 416):
                     raise
             except requests.exceptions.HTTPError as e:
-                if e.response.status_code != 501:  # Unsupported range
+                if e.response.status_code not in (501, 416):
                     raise
 
         # Just read the length if not precaching or being optimistic didn't work

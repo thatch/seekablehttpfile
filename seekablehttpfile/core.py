@@ -128,6 +128,7 @@ class SeekableHttpFile:
                 # back to a HEAD request.
                 if e.code not in (501, 416):
                     raise
+                e.close()
             except requests.exceptions.HTTPError as e:
                 if e.response is None or e.response.status_code not in (501, 416):
                     raise

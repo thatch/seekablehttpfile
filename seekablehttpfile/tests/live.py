@@ -50,10 +50,11 @@ class LiveTests(unittest.TestCase):
             f.seek(0, 99)
 
     def test_live_404(self) -> None:
-        with self.assertRaises(urllib.error.HTTPError):
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
             SeekableHttpFile(
                 "https://timhatch.com/projects/http-tests/response/?code=404"
             )
+        ctx.exception.close()
 
     def test_live_404_requests(self) -> None:
         with self.assertRaises(requests.exceptions.HTTPError):
